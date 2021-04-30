@@ -197,8 +197,9 @@ los misfits.
 ```
 
 assignment <- treatment_assign(universo, share_control = 0.3, n_t = 7,
-strata_varlist = c("population", "phone_verified", "gender_F"), missfits = "NA",
+strata_varlist = dplyr::vars(population, phone_verified, gender_F), missfits = "NA",
 key = "user_id")
+
 
 ### 7. Realiza las pruebas de balance t sobre todas las variables (Tip: transforma las categóricas en dummys). Parece haber balance?  
 
