@@ -120,7 +120,7 @@ Con base en los ejercicios de efectos mìnimos detectables, elegimos un share co
 
 ### 4 (2ptos) Qué variables crees que puedan estar más correlacionadas con el impacto? Justifica tu respuesta y elige un set
 
-# Primero vamos explorar un poco la base de datos:
+#Primero vamos explorar un poco la base de datos:
 
 str(universo)
 table(universo$population)
@@ -132,12 +132,12 @@ table(universo$months_since_register, universo$population)
 table(universo$population, universo$gender_F)
 
 ```
-La intervención busca activar los usuarios de Rappy. Eso implica volver a utilizar la aplicación 
+La intervención busca activar los usuarios de Rappi. Eso implica volver a utilizar la aplicación 
 para los usuarios inativos o empezar a utilizarla para los usuarios que la bajaron, pero nunca estubieron 
 activos. Se trata entonces de retomar o de iniciar un hábito, las variables que pueden estar correlacionadas 
 al efecto del tratamiento, por orden esperada de importancia, son:
 1) population: se son usuarios inativos o nunca estubieron activos. Los inativos 
-ya utilizaron en algun momento Rappy y se supone serán más fáciles de reengajar;
+ya utilizaron en algun momento Rappi y se supone serán más fáciles de reengajar;
 2) phone verified: los usuarios que tomaron el trabajo de registrar sus teléfonos posiblemente 
 consideraron más seriamente utilizar la aplicación;
 y 3) gender_F: las mujeres tienen una menor razón entre never active/inactive. O sea, si bajan la 
@@ -145,59 +145,81 @@ aplicación, las mujeres suelen acceder con más frecuencia que los hombres.
 
 Así, llegamos a 8 estratos:
 ```
-
 table(universo$population, universo$phone_verified, universo$gender_F)
 
-# El menor estrato tiene 1859 observaciones (mujer, inactivo, no verificó el teléfono) y 
-# el mayor estrato tiene 42622 observaciones (hombre, nunca activo, no verificó el teléfono).
+```
+El menor estrato tiene 1859 observaciones (mujer, inactivo, no verificó el teléfono) y 
+el mayor estrato tiene 42622 observaciones (hombre, nunca activo, no verificó el teléfono).
+```
 
 ### 5 (2ptos) Realiza la asignación aleatoria. Muestra la distribución de los grupos por estrato, los misfits. Sin mirar el balance, lograron una asignación aleatoria exitosa? Justifica tu respuesta 
 
-universo$population <- as.factor(universo$population)
-universo$phone_verified <- as.factor(universo$phone_verified)
-universo$gender_F <- as.factor(universo$gender_F)
+#Vamos hacer la asignación aleatoria:
 
-# Generando los estratos: 
+assignment <- treatment_assign(universo, share_control = 0.3, n_t = 7,
+strata_varlist = dplyr::vars(population, phone_verified, gender_F), missfits = "global",
+key = "user_id")
 
-universo <- universo %>%
-  group_by(population, phone_verified, gender_F) %>%
-  mutate(strata= cur_group_id()) %>%
-  mutate(treat = sample(7, n(), replace = TRUE)) %>%
-  ungroup
+# Ahora vamos ver como quedó la distribución de observaciones por estrato y 
+# de grupos por estrato:
 
-# Separando el grupo de control:
+summary <- assignment[["summary_strata"]]
+summary_long <- pivot_longer(summary, cols =c("n_strata", "n_missfits"), 
+                names_to ="tipo", values_to ="number")
+summary_long$strata <- as.factor(summary_long$strata)
 
-control <- universo %>%
-  slice_sample(prop = 0.3) %>%
-  mutate(control = 0) %>%
-  ungroup %>%
-  select(user_id, control)
+summary_treat <- assignment[["data"]]
 
-# Haciendo el merge:
+summary_treat <- summary_treat %>%
+  group_by(strata, treat) %>%
+  summarise(number = n())
 
-universo <- left_join(universo, control, by ="user_id")
+summary_treat$strata <- as.factor(summary_treat$strata)
+summary_treat$treat <- as.factor(summary_treat$treat)
 
-universo$treat[universo$control == 0] <- 0
+ggplot(data = summary_long, aes(y=number, x=strata, fill = tipo)) +
+  geom_bar(stat ="identity", position ="stack") +
+  labs(title = "Distribución de observaciones por estratos", 
+  x = "Estratos", y = "Observaciones")  +
+  scale_fill_discrete(name = "Tipo", labels = c("observaciones", "missfits")) +
+  scale_x_discrete(labels=c("Inact, NV, H","Inact, NV, F","Inact, V, H","Inact, V, F",
+  "Never, NV, H","Never, NV, F","Never, V, H","Never, V, F")) +
+   theme_classic()
 
-# Distribución de grupos por estrato:
 
-table(universo$treat, universo$strata)
-  
-# La asignación aleatoria no fue exitosa en el sentido de que los diferentes grupos, por 
-# estrato, están con probabilidades ligeramente distintas. 
+
+
+ggplot(data = summary_treat, aes(y=number, x=strata, fill = treat)) +
+  geom_bar(stat ="identity", position ="fill") +
+  labs(title = "Asignación de tratamientos por estratos", 
+  x = "Estrato", y = "% Tratamiento")  +
+  scale_fill_brewer(palette = "Set3", name = "Tratamiento", 
+  labels = c("Control","1","2","3","4","5","6","7", "Missfit"))  +
+  scale_x_discrete(labels=c("Inact, NV, H","Inact, NV, F","Inact, V, H","Inact, V, F",
+  "Never, NV, H","Never, NV, F","Never, V, H","Never, V, F")) +
+   theme_classic()
+
+```
+La asignación aleatoria fue ben sucedida. Hay un número de observaciones por estrato 
+suficientemente grande para evaluarmos los efectos de los diversos tratamientos y el número 
+de personas en cada tratamiento por estrato está equilibrado.
+```
 
 ### 6. Qué elección tomaron sobre como manejar los misfits? Elaboren sus razones
 
 ```
-Una asignación global de los misfits podería traer problemas de balance dentro de los 
-estratos. Por su vez, buscar el balance dentro de cada estrato afectaría la probabilidad 
-global para cada tratamiento y podría sesgar el efecto estimado. Como hay un número 
-relativamente confortable de observaciones por cada estrato y grupo, se opta por eliminar 
-los misfits.
+El número de missfits es bajo en todos los estratos (variando de 2 a 9) en relación 
+al número total de observaciones. En ese sentido, la primera idea fue simplemente remover 
+los missfits de la base. Sin embargo, para que no haya pérdida de observaciones al hacer el 
+cruce con la base de evaluación, se optó por manterner los missfits.
+
+Asignarlos por estrato afectaría la probabilidad global para cada tratamiento y podría sesgar 
+(aunque ligeramente) el efecto estimado. Así, se optó por hacer una asignación global, que mantiene 
+las probabilidades exactas. Como el número de missfits es pequeño, el balance no será muy afectado.
 ```
 
 assignment <- treatment_assign(universo, share_control = 0.3, n_t = 7,
-strata_varlist = dplyr::vars(population, phone_verified, gender_F), missfits = "NA",
+strata_varlist = dplyr::vars(population, phone_verified, gender_F), missfits = "Global",
 key = "user_id")
 
 
